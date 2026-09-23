@@ -12,8 +12,12 @@
 
 ## Установка
 
-Нужен только [Python 3.8 или новее](https://www.python.org/downloads/) —
-никаких сторонних пакетов ставить не надо.
+Скачайте **[gwbw-ru-0.9.zip](https://github.com/NefteProm/gwbw-ru/raw/v0.9/gwbw-ru-0.9.zip)** и распакуйте
+целиком в любую папку. Ещё нужен только
+[Python 3.8 или новее](https://www.python.org/downloads/) — никаких
+сторонних пакетов ставить не надо.
+
+В папке с распакованным архивом выполните:
 
 ```
 python install.py "C:\Program Files (x86)\Steam\steamapps\common\Gods Will Be Watching"
