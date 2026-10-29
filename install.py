@@ -10,11 +10,16 @@
    от которой собран.
 2. Кладёт рядом ``data.win.bak`` и ``gwbw_content.ini.bak``.
 3. Накладывает двоичный патч на ``data.win`` (шестой пункт в меню языков,
-   кириллица во всех 22 шрифтах, перевод экрана сетевой статистики) и
-   сверяет SHA256 результата.
+   кириллица во всех 22 шрифтах, статистика прохождений, которая копится
+   у вас локально вместо умершего сервера разработчиков) и сверяет SHA256
+   результата.
 4. ДОПИСЫВАЕТ строку ``ru`` в каждую из девяти секций вашего
    ``gwbw_content.ini``. Строки остальных пяти языков не трогаются — это
    проверяется побайтово прямо во время установки.
+
+Обновление: ставится поверх прежней версии русификатора той же командой.
+Патч накладывается на оригинал из ``data.win.bak``, старые строки ``ru``
+заменяются новыми.
 
 Ничего, кроме Python 3.8+, не требуется: bspatch реализован здесь же.
 
@@ -40,7 +45,11 @@ PATCH = HERE / "data-ru.bsdiff"
 STRINGS = HERE / "ru-strings.json"
 
 SHA_ORIGINAL = "624a1e91e03991ed925074d69531997e8c8c3a540b6ec6af5a600073e0735ac1"
-SHA_PATCHED = "8b4cc29a090926c417948b7a1bf051d1bbbedabca20df2ce713825fa79b83cce"
+SHA_PATCHED = "59e27586cd29f8d5e8f76dc8af0d8c5213eb0871b99fb045726a27dbb30b3064"
+# прежние версии русификатора: поверх них ставим, беря оригинал из data.win.bak
+SHA_OLD_PATCHED = {
+    "8b4cc29a090926c417948b7a1bf051d1bbbedabca20df2ce713825fa79b83cce": "0.9",
+}
 
 BOM = b"\xef\xbb\xbf"
 
@@ -129,13 +138,14 @@ def add_russian(ini: Path, table: "dict[str, dict[str, str]]") -> str:
         die("у gwbw_content.ini нет UTF-8 BOM — это не файл игры")
     text = raw.decode("utf-8-sig")
     trailing = text.endswith("\r\n")
+    # прежняя версия русификатора: её строки ru снимаем и пишем новые;
+    # приёмка ниже сверяет всё остальное с файлом БЕЗ них
+    text = "\r\n".join(l for l in text.split("\r\n") if not l.startswith("ru = "))
 
     out: "list[str]" = []
     total = 0
     for section, langs in parse_ini(text):
         by_lang = dict(langs)
-        if "ru" in by_lang:
-            return "уже"
         if "en" not in by_lang:
             die("в секции [" + section + "] нет строки en — файл не тот")
         if section not in table:
@@ -166,6 +176,8 @@ def add_russian(ini: Path, table: "dict[str, dict[str, str]]") -> str:
             die("внутренняя ошибка: строка ru не добавилась в [" + section + "]")
         json.loads(by_lang["ru"])  # эмуляция load_language игры
 
+    if data == raw:
+        return "уже"
     ini.write_bytes(data)
     return "секций 9, ключей " + str(total)
 
@@ -199,17 +211,26 @@ def install(game: Path) -> int:
     table = json.loads(STRINGS.read_text(encoding="utf-8"))
 
     got = sha256(datawin)
+    bak = datawin.with_suffix(".win.bak")
+    base = datawin
+    if got in SHA_OLD_PATCHED:
+        if not bak.exists() or sha256(bak) != SHA_ORIGINAL:
+            die("стоит русификатор " + SHA_OLD_PATCHED[got] + ", но рядом нет "
+                "data.win.bak с оригиналом — проверьте целостность файлов игры "
+                "в Steam и запустите установку снова")
+        print("найден русификатор " + SHA_OLD_PATCHED[got] +
+              " — обновляю, оригинал беру из data.win.bak")
+        base = bak
     if got == SHA_PATCHED:
         print("data.win уже пропатчен")
-    elif got != SHA_ORIGINAL:
+    elif got != SHA_ORIGINAL and base is datawin:
         die("ваш data.win не совпадает с версией, от которой собран патч:\n"
             "  ожидался " + SHA_ORIGINAL + "\n  получен  " + got + "\n"
             "другая версия или платформа игры — патч не применён")
     else:
-        bak = datawin.with_suffix(".win.bak")
         if not bak.exists():
             shutil.copy2(datawin, bak)
-        new = bspatch(datawin.read_bytes(), PATCH.read_bytes())
+        new = bspatch(base.read_bytes(), PATCH.read_bytes())
         tmp = datawin.with_suffix(".win.ru-tmp")
         tmp.write_bytes(new)
         if sha256(tmp) != SHA_PATCHED:
@@ -223,7 +244,7 @@ def install(game: Path) -> int:
         shutil.copy2(ini, ini_bak)
     verdict = add_russian(ini, table)
     if verdict == "уже":
-        print("gwbw_content.ini уже содержит русский")
+        print("gwbw_content.ini уже содержит русский этой версии")
     else:
         print("gwbw_content.ini дополнен: " + verdict +
               " (резерв gwbw_content.ini.bak)")
